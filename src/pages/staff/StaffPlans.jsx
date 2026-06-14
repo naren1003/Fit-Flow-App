@@ -22,10 +22,19 @@ export default function StaffPlans() {
   useEffect(() => { loadAll() }, [user])
 
   async function loadAll() {
-    const [{ data: plansData }, { data: membersData }] = await Promise.all([
-      supabase.from('workout_plans').select('*, plan_exercises(*), plan_assignments(id, is_active, profiles(full_name))').eq('trainer_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id, full_name').eq('role', 'member').eq('assigned_trainer_id', user.id).order('full_name'),
-    ])
+    const { data: plansData } = await supabase
+      .from('workout_plans')
+      .select('*, plan_exercises(*), plan_assignments(id, is_active, member_id)')
+      .order('created_at', { ascending: false })
+
+    const { data: membersData } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('role', 'member')
+
+    console.log('plans:', plansData)
+    console.log('members:', membersData)
+
     setPlans(plansData ?? [])
     setMembers(membersData ?? [])
     setLoading(false)

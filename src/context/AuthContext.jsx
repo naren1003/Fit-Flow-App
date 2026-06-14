@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -7,20 +7,34 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const fetchedRef = useRef(false)
 
   useEffect(() => {
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else setLoading(false)
+      if (session?.user) {
+        setUser(session.user)
+        if (!fetchedRef.current) {
+          fetchedRef.current = true
+          fetchProfile(session.user.id)
+        }
+      } else {
+        setLoading(false)
+      }
     })
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
+      if (session?.user) {
+        setUser(session.user)
+        if (!fetchedRef.current) {
+          fetchedRef.current = true
+          fetchProfile(session.user.id)
+        }
+      } else {
+        setUser(null)
+        setProfile(null)
+        fetchedRef.current = false
+        setLoading(false)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -32,20 +46,22 @@ export function AuthProvider({ children }) {
       .select('*')
       .eq('id', userId)
       .single()
-    setProfile(data)
+
+    setProfile(data ?? { id: userId, role: 'member' })
     setLoading(false)
   }
 
   async function signIn(email, password) {
+    fetchedRef.current = false
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error }
   }
 
   async function signOut() {
+    fetchedRef.current = false
     await supabase.auth.signOut()
   }
 
-  // role is 'member' or 'staff'
   const role = profile?.role ?? null
 
   return (

@@ -13,14 +13,30 @@ export default function StaffDashboard() {
   }, [user])
 
   async function loadMembers() {
-    const { data } = await supabase
+    const { data: membersData } = await supabase
       .from('profiles')
-      .select('*, plan_assignments(is_active, trainer_notes, workout_plans(name, goal))')
+      .select('*')
       .eq('role', 'member')
       .eq('assigned_trainer_id', user.id)
       .order('full_name')
 
-    setMembers(data ?? [])
+    const memberIds = (membersData ?? []).map(m => m.id)
+    let assignments = []
+    if (memberIds.length) {
+      const { data } = await supabase
+        .from('plan_assignments')
+        .select('*, workout_plans(name, goal)')
+        .in('member_id', memberIds)
+        .eq('is_active', true)
+      assignments = data ?? []
+    }
+
+    const merged = (membersData ?? []).map(m => ({
+      ...m,
+      activePlan: assignments.find(a => a.member_id === m.id) ?? null
+    }))
+
+    setMembers(merged)
     setLoading(false)
   }
 
@@ -51,7 +67,7 @@ export default function StaffDashboard() {
           </div>
           <p className="text-xs text-gray-500">With active plan</p>
           <p className="text-2xl font-semibold text-gray-900">
-            {loading ? '…' : members.filter(m => m.plan_assignments?.some(p => p.is_active)).length}
+            {loading ? '…' : members.filter(m => m.activePlan).length}
           </p>
         </div>
         <div className="card">
@@ -68,13 +84,15 @@ export default function StaffDashboard() {
         <div className="card">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Members to train today</h2>
           {loading ? (
-            <div className="flex flex-col gap-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 bg-gray-50 rounded-lg animate-pulse" />)}</div>
+            <div className="flex flex-col gap-3">
+              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 bg-gray-50 rounded-lg animate-pulse" />)}
+            </div>
           ) : members.length === 0 ? (
             <p className="text-sm text-gray-400 py-4 text-center">No members assigned yet.</p>
           ) : (
             <ul className="divide-y divide-gray-100">
               {members.map(m => {
-                const activePlan = m.plan_assignments?.find(p => p.is_active)
+                const activePlan = m.activePlan
                 return (
                   <li key={m.id} className="py-3 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-brand-50 flex items-center justify-center text-brand-600 text-sm font-semibold shrink-0">
@@ -101,15 +119,17 @@ export default function StaffDashboard() {
           )}
         </div>
 
-        {/* Trainer notes quick view */}
+        {/* Trainer notes */}
         <div className="card">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Your notes</h2>
           {loading ? (
-            <div className="flex flex-col gap-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse" />)}</div>
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse" />)}
+            </div>
           ) : (
             <ul className="divide-y divide-gray-100">
               {members.map(m => {
-                const activePlan = m.plan_assignments?.find(p => p.is_active)
+                const activePlan = m.activePlan
                 if (!activePlan?.trainer_notes) return null
                 return (
                   <li key={m.id} className="py-3">
@@ -118,7 +138,7 @@ export default function StaffDashboard() {
                   </li>
                 )
               }).filter(Boolean)}
-              {members.every(m => !m.plan_assignments?.find(p => p.is_active)?.trainer_notes) && (
+              {members.every(m => !m.activePlan?.trainer_notes) && (
                 <li className="py-4 text-center text-sm text-gray-400">No notes yet.</li>
               )}
             </ul>

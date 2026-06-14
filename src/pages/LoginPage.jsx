@@ -21,8 +21,12 @@ export default function LoginPage() {
     if (error) {
       setError('Invalid email or password. Please try again.')
       setLoading(false)
+    } else {
+      // Wait for profile to load then redirect
+      setTimeout(() => {
+        navigate('/')
+      }, 1500)
     }
-    // On success, AuthContext triggers re-render → App.jsx redirects by role
   }
 
   return (

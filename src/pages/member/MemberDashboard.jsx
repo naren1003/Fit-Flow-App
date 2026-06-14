@@ -15,13 +15,17 @@ export default function MemberDashboard() {
   }, [user])
 
   async function loadStats() {
-    // Sessions this month
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-    const { count } = await supabase
+    const startOfWeek = new Date()
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay())
+    startOfWeek.setHours(0,0,0,0)
+
+    // All sessions ordered by date
+    const { data: allSessions } = await supabase
       .from('workout_sessions')
-      .select('*', { count: 'exact', head: true })
+      .select('completed_at')
       .eq('member_id', user.id)
-      .gte('completed_at', startOfMonth)
+      .order('completed_at', { ascending: false })
 
     // Active plan
     const { data: plan } = await supabase
@@ -29,9 +33,67 @@ export default function MemberDashboard() {
       .select('*, workout_plans(name, goal)')
       .eq('member_id', user.id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
-    setStats({ sessions: count ?? 0, activePlan: plan })
+    // PRs this month — count set_logs where weight is max for that exercise
+    const { data: sessionIds } = await supabase
+      .from('workout_sessions')
+      .select('id')
+      .eq('member_id', user.id)
+      .gte('completed_at', startOfMonth)
+
+    let prs = 0
+    if (sessionIds?.length) {
+      const ids = sessionIds.map(s => s.id)
+      const { data: monthLogs } = await supabase
+        .from('set_logs')
+        .select('exercise_name, weight_kg')
+        .in('session_id', ids)
+
+      const { data: allLogs } = await supabase
+        .from('set_logs')
+        .select('exercise_name, weight_kg')
+        .not('weight_kg', 'is', null)
+
+      if (monthLogs && allLogs) {
+        const allMaxes = {}
+        allLogs.forEach(l => {
+          if (!allMaxes[l.exercise_name] || l.weight_kg > allMaxes[l.exercise_name])
+            allMaxes[l.exercise_name] = l.weight_kg
+        })
+        const monthMaxes = {}
+        monthLogs.forEach(l => {
+          if (!monthMaxes[l.exercise_name] || l.weight_kg > monthMaxes[l.exercise_name])
+            monthMaxes[l.exercise_name] = l.weight_kg
+        })
+        prs = Object.entries(monthMaxes).filter(([ex, kg]) => kg >= (allMaxes[ex] ?? 0)).length
+      }
+    }
+
+    // Streak — count consecutive days with a session going back from today
+    const sessionDates = new Set(
+      (allSessions ?? []).map(s => new Date(s.completed_at).toDateString())
+    )
+    let streak = 0
+    const check = new Date()
+    while (sessionDates.has(check.toDateString())) {
+      streak++
+      check.setDate(check.getDate() - 1)
+    }
+
+    // Days trained this week
+    const daysThisWeek = new Set(
+      (allSessions ?? [])
+        .filter(s => new Date(s.completed_at) >= startOfWeek)
+        .map(s => new Date(s.completed_at).toDateString())
+    ).size
+
+    // Sessions this month
+    const sessions = (allSessions ?? []).filter(s =>
+      new Date(s.completed_at) >= new Date(startOfMonth)
+    ).length
+
+    setStats({ sessions, streak, prs, daysThisWeek, activePlan: plan })
     setLoading(false)
   }
 
@@ -49,9 +111,9 @@ export default function MemberDashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
           { icon: Dumbbell,   color: 'text-brand-400 bg-brand-50', label: 'Sessions this month', value: loading ? '…' : stats.sessions },
-          { icon: Flame,      color: 'text-orange-500 bg-orange-50', label: 'Day streak',          value: '—' },
-          { icon: TrendingUp, color: 'text-blue-500 bg-blue-50',   label: 'PRs this month',       value: '—' },
-          { icon: Calendar,   color: 'text-purple-500 bg-purple-50', label: 'Days trained/week',  value: '—' },
+          { icon: Flame,      color: 'text-orange-500 bg-orange-50', label: 'Day streak',        value: loading ? '…' : `${stats.streak}d` },
+{ icon: TrendingUp, color: 'text-blue-500 bg-blue-50',    label: 'PRs this month',     value: loading ? '…' : stats.prs },
+{ icon: Calendar,   color: 'text-purple-500 bg-purple-50', label: 'Days trained/week', value: loading ? '…' : stats.daysThisWeek },
         ].map(({ icon: Icon, color, label, value }) => (
           <div key={label} className="card">
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-3 ${color}`}>

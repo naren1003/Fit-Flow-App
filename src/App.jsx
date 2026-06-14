@@ -18,6 +18,8 @@ import StaffAttendance from './pages/staff/StaffAttendance'
 function AuthGate() {
   const { user, role, loading } = useAuth()
 
+  console.log('AuthGate — user:', user?.email, 'role:', role, 'loading:', loading)
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -31,7 +33,8 @@ function AuthGate() {
 
   if (!user) return <Navigate to="/login" replace />
   if (role === 'staff') return <Navigate to="/staff" replace />
-  return <Navigate to="/member" replace />
+  if (role === 'member') return <Navigate to="/member" replace />
+  return <Navigate to="/login" replace />
 }
 
 function ProtectedRoute({ allowedRole, children }) {

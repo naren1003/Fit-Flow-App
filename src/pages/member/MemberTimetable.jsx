@@ -17,23 +17,25 @@ export default function MemberTimetable() {
   }, [user])
 
   async function loadPlan() {
-    const { data: assignment } = await supabase
+    const { data: assignment, error } = await supabase
       .from('plan_assignments')
       .select('*, workout_plans(id, name, goal, trainer_notes)')
       .eq('member_id', user.id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
+
+    console.log('assignment:', assignment, 'error:', error)
 
     if (!assignment) { setLoading(false); return }
-
     setPlan(assignment)
 
     const { data: exs } = await supabase
       .from('plan_exercises')
       .select('*')
       .eq('plan_id', assignment.workout_plans.id)
-      .order('day_of_week').order('order_index')
+      .order('sort_order')
 
+    console.log('exercises:', exs)
     setExercises(exs ?? [])
     setLoading(false)
   }

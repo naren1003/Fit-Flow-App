@@ -18,10 +18,10 @@ export default function StaffMembers() {
   async function loadMembers() {
     const { data } = await supabase
       .from('profiles')
-      .select('*, plan_assignments(is_active, workout_plans(name, goal))')
+      .select('*, plan_assignments!plan_assignments_member_id_fkey(is_active, workout_plans(name, goal))')
       .eq('role', 'member')
-      .eq('assigned_trainer_id', user.id)
       .order('full_name')
+    
     setMembers(data ?? [])
     setLoading(false)
   }
