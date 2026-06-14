@@ -23,17 +23,14 @@ export default function MemberWorkout() {
   const restRef = useRef(null)
   const elapsedRef = useRef(null)
 
-  useEffect(() => {
-    if (user) loadTodayExercises()
-  }, [user])
-
   // Restore state from localStorage on mount
   useEffect(() => {
+    if (!user) return
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       try {
         const state = JSON.parse(saved)
-        if (state.userId === user?.id && state.day === todayName) {
+        if (state.userId === user.id && state.day === todayName) {
           setStarted(true)
           setStartedAt(state.startedAt)
           setSets(state.sets)
@@ -41,9 +38,10 @@ export default function MemberWorkout() {
           if (state.restStartedAt && state.restDuration) {
             const remaining = state.restDuration - Math.floor((Date.now() - state.restStartedAt) / 1000)
             if (remaining > 0) {
-              // Store original values so the interval effect can use them
-              setRestStartedAt(state.restStartedAt)
-              setRestTimer(state.restDuration) // set original duration, interval recalculates
+              // Set remaining (not original) so the display is correct immediately
+              setRestTimer(remaining)
+              // Use a fake startedAt that makes the interval calculate correctly
+              setRestStartedAt(Date.now() - (state.restDuration - remaining) * 1000)
             }
           }
         }
@@ -51,22 +49,12 @@ export default function MemberWorkout() {
     }
   }, [user])
 
-  // Save state to localStorage whenever key state changes
-  const saveToStorage = useCallback((overrides = {}) => {
-    if (!started && !overrides.started) return
-    const state = {
-      userId: user?.id,
-      day: todayName,
-      startedAt: overrides.startedAt ?? startedAt,
-      sets: overrides.sets ?? sets,
-      planId: overrides.planId ?? planId,
-      restStartedAt: overrides.restStartedAt ?? restStartedAt,
-      restDuration: overrides.restDuration ?? null,
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [user, started, startedAt, sets, planId, restStartedAt])
+  // Load exercises
+  useEffect(() => {
+    if (user) loadTodayExercises()
+  }, [user])
 
-  // Elapsed workout timer — date-based so it works across tab switches
+  // Elapsed workout timer — date based so it works across tab switches
   useEffect(() => {
     if (!started || !startedAt) return
     function tick() {
@@ -77,26 +65,26 @@ export default function MemberWorkout() {
     return () => clearInterval(elapsedRef.current)
   }, [started, startedAt])
 
-  // Rest timer — date-based
+  // Rest timer — date based, survives refresh and tab switches
   useEffect(() => {
-  if (!restStartedAt) return
-  const originalDuration = restTimer
-  const startRest = restStartedAt
+    if (!restStartedAt) return
+    const startRest = restStartedAt
+    const originalDuration = restTimer
 
-  clearInterval(restRef.current)
-  restRef.current = setInterval(() => {
-    const rem = originalDuration - Math.floor((Date.now() - startRest) / 1000)
-    if (rem <= 0) {
-      setRestTimer(null)
-      setRestStartedAt(null)
-      clearInterval(restRef.current)
-    } else {
-      setRestTimer(rem)
-    }
-  }, 500)
+    clearInterval(restRef.current)
+    restRef.current = setInterval(() => {
+      const rem = originalDuration - Math.floor((Date.now() - startRest) / 1000)
+      if (rem <= 0) {
+        setRestTimer(null)
+        setRestStartedAt(null)
+        clearInterval(restRef.current)
+      } else {
+        setRestTimer(rem)
+      }
+    }, 500)
 
-  return () => clearInterval(restRef.current)
-}, [restStartedAt])
+    return () => clearInterval(restRef.current)
+  }, [restStartedAt])
 
   async function loadTodayExercises() {
     const { data: assignment } = await supabase
@@ -107,7 +95,9 @@ export default function MemberWorkout() {
       .single()
 
     if (!assignment) { setLoading(false); return }
-    setPlanId(assignment.workout_plans.id)
+
+    // Only set planId if not already restored from localStorage
+    setPlanId(prev => prev ?? assignment.workout_plans.id)
 
     const { data: exs } = await supabase
       .from('plan_exercises')
@@ -118,20 +108,33 @@ export default function MemberWorkout() {
 
     setExercises(exs ?? [])
 
-    // Check if we have saved state for these exercises
+    // Only init sets if no saved state
     const saved = localStorage.getItem(STORAGE_KEY)
     if (!saved) {
       const initialSets = {}
-        ; (exs ?? []).forEach(ex => {
-          initialSets[ex.id] = Array.from({ length: ex.sets || 3 }, () => ({
-            reps: ex.reps ?? '',
-            kg: ex.weight_kg ?? '',
-            done: false
-          }))
-        })
+      ;(exs ?? []).forEach(ex => {
+        initialSets[ex.id] = Array.from({ length: ex.sets || 3 }, () => ({
+          reps: ex.reps ?? '',
+          kg: ex.weight_kg ?? '',
+          done: false
+        }))
+      })
       setSets(initialSets)
     }
     setLoading(false)
+  }
+
+  function saveToStorage(overrides = {}) {
+    const state = {
+      userId: user?.id,
+      day: todayName,
+      startedAt: overrides.startedAt ?? startedAt,
+      sets: overrides.sets ?? sets,
+      planId: overrides.planId ?? planId,
+      restStartedAt: 'restStartedAt' in overrides ? overrides.restStartedAt : restStartedAt,
+      restDuration: 'restDuration' in overrides ? overrides.restDuration : null,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }
 
   function startWorkout() {
@@ -167,40 +170,68 @@ export default function MemberWorkout() {
     })
   }
 
-  function completeSet(exId, setIdx) {
+  function toggleSet(exId, setIdx) {
+    const currentlyDone = sets[exId]?.[setIdx]?.done
     setSets(prev => {
       const updated = {
         ...prev,
-        [exId]: prev[exId].map((s, i) => i === setIdx ? { ...s, done: true } : s),
+        [exId]: prev[exId].map((s, i) => i === setIdx ? { ...s, done: !s.done } : s),
       }
-      saveToStorage({ sets: updated })
+      if (!currentlyDone) {
+        const now = Date.now()
+        const duration = 90
+        // Save everything including rest timer in one go
+        const state = {
+          userId: user?.id,
+          day: todayName,
+          startedAt,
+          sets: updated,
+          planId,
+          restStartedAt: now,
+          restDuration: duration,
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      } else {
+        const state = {
+          userId: user?.id,
+          day: todayName,
+          startedAt,
+          sets: updated,
+          planId,
+          restStartedAt: null,
+          restDuration: null,
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      }
       return updated
     })
-    const now = Date.now()
-    const duration = 90
-    setRestStartedAt(now)
-    setRestTimer(duration)
-    saveToStorage({ restStartedAt: now, restDuration: duration })
+    if (!currentlyDone) {
+      const now = Date.now()
+      setRestStartedAt(now)
+      setRestTimer(90)
+    } else {
+      skipRest()
+    }
   }
 
   function skipRest() {
     clearInterval(restRef.current)
     setRestTimer(null)
     setRestStartedAt(null)
+    saveToStorage({ restStartedAt: null, restDuration: null })
   }
 
   function formatTime(s) {
     if (!s && s !== 0) return '0:00'
-    const abs = Math.abs(s)
-    return `${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   }
 
   function formatElapsed(s) {
     const h = Math.floor(s / 3600)
     const m = Math.floor((s % 3600) / 60)
     const sec = s % 60
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-    return `${m}:${String(sec).padStart(2, '0')}`
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+    return `${m}:${String(sec).padStart(2,'0')}`
   }
 
   const allDone = exercises.length > 0 && exercises.every(ex =>
@@ -352,7 +383,7 @@ export default function MemberWorkout() {
                   value={s.reps} onChange={e => updateSet(ex.id, i, 'reps', e.target.value)} disabled={s.done} />
                 <input className="input py-1.5 text-center" type="number" min="0" step="0.5" placeholder="20"
                   value={s.kg} onChange={e => updateSet(ex.id, i, 'kg', e.target.value)} disabled={s.done} />
-                <button onClick={() => !s.done && completeSet(ex.id, i)}
+                <button onClick={() => toggleSet(ex.id, i)}
                   className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all ${s.done ? 'bg-brand-400 border-brand-400 text-white' : 'border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-400'}`}>
                   <Check size={14} />
                 </button>
