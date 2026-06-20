@@ -1,12 +1,16 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Zap, LayoutDashboard, Users, ClipboardList, ScanLine, LogOut } from 'lucide-react'
+import { Zap, LayoutDashboard, Users, ClipboardList, ScanLine, LogOut, ShieldCheck } from 'lucide-react'
 
-const nav = [
+const baseNav = [
   { to: '/staff',            label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/staff/members',    label: 'Members',   icon: Users },
   { to: '/staff/plans',      label: 'Plans',     icon: ClipboardList },
   { to: '/staff/attendance', label: 'Attendance',icon: ScanLine },
+]
+
+const adminNav = [
+  { to: '/staff/team', label: 'Team', icon: ShieldCheck },
 ]
 
 export default function StaffLayout() {
@@ -18,6 +22,8 @@ export default function StaffLayout() {
     navigate('/login')
   }
 
+  const nav = profile?.is_admin ? [...baseNav, ...adminNav] : baseNav
+
   return (
     <div className="flex h-screen bg-gray-50">
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col shrink-0">
@@ -27,7 +33,7 @@ export default function StaffLayout() {
           </div>
           <div>
             <span className="font-semibold text-gray-900">FitFlow</span>
-            <span className="ml-2 badge badge-amber text-[10px]">Staff</span>
+            <span className="ml-2 badge badge-amber text-[10px]">{profile?.is_admin ? 'Admin' : 'Staff'}</span>
           </div>
         </div>
 
@@ -58,7 +64,7 @@ export default function StaffLayout() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">{profile?.full_name ?? 'Trainer'}</p>
-              <p className="text-xs text-gray-400 truncate">Staff</p>
+              <p className="text-xs text-gray-400 truncate">{profile?.is_admin ? 'Admin' : 'Staff'}</p>
             </div>
           </div>
           <button

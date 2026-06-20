@@ -111,7 +111,7 @@ export default function MemberMembership() {
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs opacity-75 mb-1">Current plan</p>
-            <p className="text-2xl font-semibold">{profile?.membership_plan ?? 'Standard'}</p>
+            <p className="text-2xl font-semibold">{profile?.membership_plan ?? 'General Training'}</p>
             {expiryDate && <p className="text-sm opacity-75 mt-1">Valid until {expiryDate}</p>}
             {profile?.membership_expiry && (() => {
               const days = Math.ceil((new Date(profile.membership_expiry) - new Date()) / (1000 * 60 * 60 * 24))
@@ -137,7 +137,7 @@ export default function MemberMembership() {
           onClick={() => { setTab('membership'); setSelectedPlan(null) }}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'membership' ? 'bg-brand-400 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
         >
-          <CreditCard size={15} /> Membership
+          <CreditCard size={15} /> General Training
         </button>
         <button
           onClick={() => { setTab('pt'); setSelectedPlan(null) }}

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 
 import LoginPage from './pages/LoginPage'
+import PendingApprovalPage from './pages/PendingApprovalPage'
 import MemberLayout from './pages/member/MemberLayout'
 import MemberDashboard from './pages/member/MemberDashboard'
 import MemberTimetable from './pages/member/MemberTimetable'
@@ -14,11 +15,10 @@ import StaffDashboard from './pages/staff/StaffDashboard'
 import StaffMembers from './pages/staff/StaffMembers'
 import StaffPlans from './pages/staff/StaffPlans'
 import StaffAttendance from './pages/staff/StaffAttendance'
+import StaffTeam from './pages/staff/StaffTeam'
 
 function AuthGate() {
-  const { user, role, loading } = useAuth()
-
-  console.log('AuthGate — user:', user?.email, 'role:', role, 'loading:', loading)
+  const { user, profile, role, loading } = useAuth()
 
   if (loading) {
     return (
@@ -32,13 +32,17 @@ function AuthGate() {
   }
 
   if (!user) return <Navigate to="/login" replace />
-  if (role === 'staff') return <Navigate to="/staff" replace />
+
+  if (role === 'staff') {
+    if (profile?.staff_status === 'pending') return <Navigate to="/pending" replace />
+    return <Navigate to="/staff" replace />
+  }
   if (role === 'member') return <Navigate to="/member" replace />
   return <Navigate to="/login" replace />
 }
 
 function ProtectedRoute({ allowedRole, children }) {
-  const { user, role, loading } = useAuth()
+  const { user, profile, role, loading } = useAuth()
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -47,6 +51,11 @@ function ProtectedRoute({ allowedRole, children }) {
   )
 
   if (!user) return <Navigate to="/login" replace />
+
+  if (allowedRole === 'staff' && role === 'staff' && profile?.staff_status === 'pending') {
+    return <Navigate to="/pending" replace />
+  }
+
   if (role !== allowedRole) return <Navigate to={role === 'staff' ? '/staff' : '/member'} replace />
 
   return children
@@ -59,6 +68,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<AuthGate />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/pending" element={<PendingApprovalPage />} />
 
           {/* Member routes */}
           <Route path="/member" element={
@@ -79,6 +89,7 @@ export default function App() {
             <Route path="members" element={<StaffMembers />} />
             <Route path="plans" element={<StaffPlans />} />
             <Route path="attendance" element={<StaffAttendance />} />
+            <Route path="team" element={<StaffTeam />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
