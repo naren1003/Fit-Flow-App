@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 
 import LoginPage from './pages/LoginPage'
 import PendingApprovalPage from './pages/PendingApprovalPage'
+import SettingsPage from './pages/SettingsPage'
 import MemberLayout from './pages/member/MemberLayout'
 import MemberDashboard from './pages/member/MemberDashboard'
 import MemberTimetable from './pages/member/MemberTimetable'
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="workout" element={<MemberWorkout />} />
             <Route path="progress" element={<MemberProgress />} />
             <Route path="membership" element={<MemberMembership />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
 
           {/* Staff routes */}
@@ -90,6 +92,7 @@ export default function App() {
             <Route path="plans" element={<StaffPlans />} />
             <Route path="attendance" element={<StaffAttendance />} />
             <Route path="team" element={<StaffTeam />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,19 +1,27 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { Play, CheckCircle, SkipForward, Dumbbell, Check, Timer } from 'lucide-react'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const todayName = DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
-const STORAGE_KEY = 'fitflow_workout_state'
+const actualToday = DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
+const STORAGE_KEY_PREFIX = 'fitflow_workout_state'
 
 export default function MemberWorkout() {
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const dayParam = searchParams.get('day')
+  const todayName = (dayParam && DAYS.includes(dayParam)) ? dayParam : actualToday
+  const isOverride = todayName !== actualToday
+  const STORAGE_KEY = `${STORAGE_KEY_PREFIX}_${todayName}`
   const [exercises, setExercises] = useState([])
   const [planId, setPlanId] = useState(null)
   const [started, setStarted] = useState(false)
   const [startedAt, setStartedAt] = useState(null)
   const [sets, setSets] = useState({})
+  const [lastSets, setLastSets] = useState({}) // { exerciseName: [{reps, kg}] } from previous session
   const [restTimer, setRestTimer] = useState(null)
   const [restStartedAt, setRestStartedAt] = useState(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -38,10 +46,8 @@ export default function MemberWorkout() {
           if (state.restStartedAt && state.restDuration) {
             const remaining = state.restDuration - Math.floor((Date.now() - state.restStartedAt) / 1000)
             if (remaining > 0) {
-              // Set remaining (not original) so the display is correct immediately
-              setRestTimer(remaining)
-              // Use a fake startedAt that makes the interval calculate correctly
-              setRestStartedAt(Date.now() - (state.restDuration - remaining) * 1000)
+              setRestStartedAt(state.restStartedAt)
+              setRestTimer(state.restDuration)
             }
           }
         }
@@ -107,6 +113,7 @@ export default function MemberWorkout() {
       .order('sort_order')
 
     setExercises(exs ?? [])
+    loadLastSets(exs ?? [])
 
     // Only init sets if no saved state
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -124,6 +131,38 @@ export default function MemberWorkout() {
     setLoading(false)
   }
 
+  async function loadLastSets(exs) {
+    if (!exs.length) return
+    const exerciseNames = exs.map(e => e.exercise_name)
+
+    // Find the most recent completed session for this day (excluding any in-progress)
+    const { data: pastSessions } = await supabase
+      .from('workout_sessions')
+      .select('id, completed_at')
+      .eq('member_id', user.id)
+      .eq('day_name', todayName)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+
+    if (!pastSessions?.length) return
+
+    const { data: logs } = await supabase
+      .from('set_logs')
+      .select('exercise_name, set_number, reps, weight_kg')
+      .eq('session_id', pastSessions[0].id)
+      .in('exercise_name', exerciseNames)
+      .order('set_number')
+
+    if (!logs?.length) return
+
+    const grouped = {}
+    logs.forEach(l => {
+      if (!grouped[l.exercise_name]) grouped[l.exercise_name] = []
+      grouped[l.exercise_name].push({ reps: l.reps, kg: l.weight_kg })
+    })
+    setLastSets(grouped)
+  }
+
   function saveToStorage(overrides = {}) {
     const state = {
       userId: user?.id,
@@ -131,8 +170,8 @@ export default function MemberWorkout() {
       startedAt: overrides.startedAt ?? startedAt,
       sets: overrides.sets ?? sets,
       planId: overrides.planId ?? planId,
-      restStartedAt: 'restStartedAt' in overrides ? overrides.restStartedAt : restStartedAt,
-      restDuration: 'restDuration' in overrides ? overrides.restDuration : null,
+      restStartedAt: overrides.restStartedAt ?? null,
+      restDuration: overrides.restDuration ?? null,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }
@@ -170,48 +209,20 @@ export default function MemberWorkout() {
     })
   }
 
-  function toggleSet(exId, setIdx) {
-    const currentlyDone = sets[exId]?.[setIdx]?.done
+  function completeSet(exId, setIdx) {
     setSets(prev => {
       const updated = {
         ...prev,
-        [exId]: prev[exId].map((s, i) => i === setIdx ? { ...s, done: !s.done } : s),
+        [exId]: prev[exId].map((s, i) => i === setIdx ? { ...s, done: true } : s),
       }
-      if (!currentlyDone) {
-        const now = Date.now()
-        const duration = 90
-        // Save everything including rest timer in one go
-        const state = {
-          userId: user?.id,
-          day: todayName,
-          startedAt,
-          sets: updated,
-          planId,
-          restStartedAt: now,
-          restDuration: duration,
-        }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-      } else {
-        const state = {
-          userId: user?.id,
-          day: todayName,
-          startedAt,
-          sets: updated,
-          planId,
-          restStartedAt: null,
-          restDuration: null,
-        }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-      }
+      const now = Date.now()
+      const duration = 90
+      saveToStorage({ sets: updated, restStartedAt: now, restDuration: duration })
       return updated
     })
-    if (!currentlyDone) {
-      const now = Date.now()
-      setRestStartedAt(now)
-      setRestTimer(90)
-    } else {
-      skipRest()
-    }
+    const now = Date.now()
+    setRestStartedAt(now)
+    setRestTimer(90)
   }
 
   function skipRest() {
@@ -309,7 +320,10 @@ export default function MemberWorkout() {
         <Dumbbell size={28} className="text-brand-400" />
       </div>
       <div className="text-center">
-        <h2 className="text-xl font-semibold text-gray-900">Today — {todayName}</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          {isOverride ? `${todayName}'s workout` : `Today — ${todayName}`}
+        </h2>
+        {isOverride && <p className="text-xs text-amber-600 mt-1">You're doing a different day than scheduled today — that's okay!</p>}
         <p className="text-gray-500 mt-1">{exercises.length} exercises ready</p>
       </div>
       <ul className="card w-full max-w-sm divide-y divide-gray-100">
@@ -362,7 +376,10 @@ export default function MemberWorkout() {
         </div>
       )}
 
-      <h1 className="text-lg font-semibold text-gray-900">{todayName}</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="text-lg font-semibold text-gray-900">{todayName}</h1>
+        {isOverride && <span className="badge badge-amber">Out of schedule</span>}
+      </div>
 
       {exercises.map(ex => {
         const exSets = sets[ex.id] ?? []
@@ -373,22 +390,27 @@ export default function MemberWorkout() {
               <h3 className="text-sm font-semibold text-gray-900">{ex.exercise_name}</h3>
               <span className="text-xs text-gray-500">{doneSets}/{ex.sets} sets</span>
             </div>
-            <div className="grid grid-cols-[60px_1fr_1fr_48px] gap-2 px-5 py-2 text-xs text-gray-400 border-b border-gray-50">
-              <span>Set</span><span>Reps</span><span>Weight (kg)</span><span></span>
+            <div className="grid grid-cols-[60px_70px_1fr_1fr_48px] gap-2 px-5 py-2 text-xs text-gray-400 border-b border-gray-50">
+              <span>Set</span><span>Last time</span><span>Reps</span><span>Weight (kg)</span><span></span>
             </div>
-            {exSets.map((s, i) => (
-              <div key={i} className={`grid grid-cols-[60px_1fr_1fr_48px] gap-2 items-center px-5 py-2.5 border-b border-gray-50 last:border-0 transition-colors ${s.done ? 'bg-brand-50' : ''}`}>
+            {exSets.map((s, i) => {
+              const last = lastSets[ex.exercise_name]?.[i]
+              return (
+              <div key={i} className={`grid grid-cols-[60px_70px_1fr_1fr_48px] gap-2 items-center px-5 py-2.5 border-b border-gray-50 last:border-0 transition-colors ${s.done ? 'bg-brand-50' : ''}`}>
                 <span className="text-sm text-gray-500">Set {i + 1}</span>
+                <span className="text-xs text-gray-400">
+                  {last ? `${last.reps ?? '–'}×${last.kg ?? '–'}kg` : '—'}
+                </span>
                 <input className="input py-1.5 text-center" type="number" min="1" placeholder="10"
                   value={s.reps} onChange={e => updateSet(ex.id, i, 'reps', e.target.value)} disabled={s.done} />
                 <input className="input py-1.5 text-center" type="number" min="0" step="0.5" placeholder="20"
                   value={s.kg} onChange={e => updateSet(ex.id, i, 'kg', e.target.value)} disabled={s.done} />
-                <button onClick={() => toggleSet(ex.id, i)}
+                <button onClick={() => !s.done && completeSet(ex.id, i)}
                   className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all ${s.done ? 'bg-brand-400 border-brand-400 text-white' : 'border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-400'}`}>
                   <Check size={14} />
                 </button>
               </div>
-            ))}
+            )})}
             {ex.notes && (
               <div className="px-5 py-2.5 bg-amber-50 text-xs text-amber-700 border-t border-amber-100">{ex.notes}</div>
             )}

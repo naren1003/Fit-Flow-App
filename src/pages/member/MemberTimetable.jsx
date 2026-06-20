@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { CalendarDays, Dumbbell } from 'lucide-react'
+import { CalendarDays, Dumbbell, Play } from 'lucide-react'
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const today = DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
 
 export default function MemberTimetable() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [plan, setPlan] = useState(null)
   const [exercises, setExercises] = useState([])
   const [loading, setLoading] = useState(true)
@@ -17,14 +19,12 @@ export default function MemberTimetable() {
   }, [user])
 
   async function loadPlan() {
-    const { data: assignment, error } = await supabase
+    const { data: assignment } = await supabase
       .from('plan_assignments')
       .select('*, workout_plans(id, name, goal, trainer_notes)')
       .eq('member_id', user.id)
       .eq('is_active', true)
       .maybeSingle()
-
-    console.log('assignment:', assignment, 'error:', error)
 
     if (!assignment) { setLoading(false); return }
     setPlan(assignment)
@@ -35,9 +35,12 @@ export default function MemberTimetable() {
       .eq('plan_id', assignment.workout_plans.id)
       .order('sort_order')
 
-    console.log('exercises:', exs)
     setExercises(exs ?? [])
     setLoading(false)
+  }
+
+  function doThisDay(day) {
+    navigate(`/member/workout?day=${encodeURIComponent(day)}`)
   }
 
   if (loading) return <LoadingSkeleton />
@@ -50,7 +53,6 @@ export default function MemberTimetable() {
     </div>
   )
 
-  // Group exercises by day
   const byDay = {}
   DAYS.forEach(d => byDay[d] = [])
   exercises.forEach(e => { if (byDay[e.day_of_week]) byDay[e.day_of_week].push(e) })
@@ -75,9 +77,17 @@ export default function MemberTimetable() {
               <div key={day} className={`card transition-all ${isToday ? 'ring-2 ring-brand-400' : ''}`}>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-gray-900">{day}</h3>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     {isToday && <span className="badge badge-green">Today</span>}
                     {isRest && <span className="badge badge-gray">Rest day</span>}
+                    {!isRest && (
+                      <button
+                        onClick={() => doThisDay(day)}
+                        className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                      >
+                        <Play size={12} /> {isToday ? 'Start' : 'Do this workout'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -103,7 +113,6 @@ export default function MemberTimetable() {
           })}
         </div>
 
-        {/* Notes panel */}
         <div className="flex flex-col gap-4">
           {plan.workout_plans.trainer_notes && (
             <div className="card bg-brand-50 border-brand-100">
@@ -118,10 +127,9 @@ export default function MemberTimetable() {
             </div>
           )}
 
-          {/* Calendar heatmap placeholder */}
           <div className="card">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">June 2026</h3>
-            <MiniCalendar userId={null} />
+            <MiniCalendar />
           </div>
         </div>
       </div>
@@ -132,7 +140,7 @@ export default function MemberTimetable() {
 function MiniCalendar() {
   const days = ['S','M','T','W','T','F','S']
   const dates = Array.from({ length: 30 }, (_, i) => i + 1)
-  const today = new Date().getDate()
+  const todayDate = new Date().getDate()
 
   return (
     <div>
@@ -146,7 +154,7 @@ function MiniCalendar() {
           <div
             key={d}
             className={`aspect-square flex items-center justify-center rounded-md text-xs font-medium transition-all
-              ${d === today ? 'border border-brand-400 text-brand-600' : 'text-gray-500'}
+              ${d === todayDate ? 'border border-brand-400 text-brand-600' : 'text-gray-500'}
             `}
           >
             {d}

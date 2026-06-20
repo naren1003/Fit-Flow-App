@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Zap, LayoutDashboard, CalendarDays, Dumbbell, TrendingUp, CreditCard, LogOut } from 'lucide-react'
+import { Zap, LayoutDashboard, CalendarDays, Dumbbell, TrendingUp, CreditCard, LogOut, Settings } from 'lucide-react'
 
 const nav = [
   { to: '/member',            label: 'Dashboard',  icon: LayoutDashboard, end: true },
@@ -8,6 +8,7 @@ const nav = [
   { to: '/member/workout',    label: 'Workout',    icon: Dumbbell },
   { to: '/member/progress',   label: 'Progress',   icon: TrendingUp },
   { to: '/member/membership', label: 'Membership', icon: CreditCard },
+  { to: '/member/settings',   label: 'Settings',   icon: Settings },
 ]
 
 export default function MemberLayout() {

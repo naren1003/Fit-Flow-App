@@ -1,12 +1,13 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Zap, LayoutDashboard, Users, ClipboardList, ScanLine, LogOut, ShieldCheck } from 'lucide-react'
+import { Zap, LayoutDashboard, Users, ClipboardList, ScanLine, LogOut, ShieldCheck, Settings } from 'lucide-react'
 
 const baseNav = [
   { to: '/staff',            label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/staff/members',    label: 'Members',   icon: Users },
   { to: '/staff/plans',      label: 'Plans',     icon: ClipboardList },
   { to: '/staff/attendance', label: 'Attendance',icon: ScanLine },
+  { to: '/staff/settings',   label: 'Settings',  icon: Settings },
 ]
 
 const adminNav = [
